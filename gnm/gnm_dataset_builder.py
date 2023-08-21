@@ -30,30 +30,30 @@ class GNMDataset(tfds.core.GeneratorBasedBuilder):
                 'steps': tfds.features.Dataset({
                     'observation': tfds.features.FeaturesDict({
                         'image': tfds.features.Image(
-                            shape=(64, 64, 3),
+                            shape=(120, 160, 3),
                             dtype=np.uint8,
                             encoding_format='png',
                             doc='Main camera RGB observation.',
                         ),
                         'state': tfds.features.Tensor(
-                            shape=(10,),
-                            dtype=np.float32,
+                            shape=(7,),
+                            dtype=np.float64,
                             doc='Robot state, consists of [7x robot joint angles, '
                                 '2x gripper position, 1x door opening angle].',
                         )
                     }),
                     'action': tfds.features.Tensor(
-                        shape=(10,),
-                        dtype=np.float32,
+                        shape=(7,),
+                        dtype=np.float64,
                         doc='Robot action, consists of [7x joint velocities, '
                             '2x gripper velocities, 1x terminate episode].',
                     ),
                     'discount': tfds.features.Scalar(
-                        dtype=np.float32,
+                        dtype=np.float64,
                         doc='Discount if provided, default to 1.'
                     ),
                     'reward': tfds.features.Scalar(
-                        dtype=np.float32,
+                        dtype=np.float64,
                         doc='Reward if provided, 1 on final step for demos.'
                     ),
                     'is_first': tfds.features.Scalar(
@@ -88,11 +88,11 @@ class GNMDataset(tfds.core.GeneratorBasedBuilder):
     def _split_generators(self, dl_manager: tfds.download.DownloadManager):
         """Define data splits."""
         return {
-            'train': self._generate_examples(paths='/iris/u/jyang27/dataset_builders/gnm_dataset'),
+            'train': self._generate_examples(path='/home/jonathan/dev/gnm_dataset'),
             #'val': self._generate_examples(path='data/val/episode_*.npy'),
         }
 
-    def _generate_examples(self, paths) -> Iterator[Tuple[str, Any]]:
+    def _generate_examples(self, path) -> Iterator[Tuple[str, Any]]:
         """Generator of examples for each split."""
 
         def _get_folder_names(data_dir):
@@ -152,12 +152,12 @@ class GNMDataset(tfds.core.GeneratorBasedBuilder):
                 positions = np.concatenate([positions, np.repeat(positions[-1][None], const_len, axis=0)], axis=0)
 
             assert yaw.shape == (len_traj_pred + 1,), f"{yaw.shape} and {(len_traj_pred + 1,)} should be equal"
-            assert positions.shape == (len_traj_pred + 1, 2), f"{positions.shape} and {(self.len_traj_pred + 1, 2)} should be equal"
+            assert positions.shape == (len_traj_pred + 1, 2), f"{positions.shape} and {(len_traj_pred + 1, 2)} should be equal"
 
             waypoints = _to_local_coords(positions, positions[0], yaw[0])
             goal_pos = _to_local_coords(goal_pos, positions[0], yaw[0])
 
-            assert waypoints.shape == (len_traj_pred + 1, 2), f"{waypoints.shape} and {(self.len_traj_pred + 1, 2)} should be equal"
+            assert waypoints.shape == (len_traj_pred + 1, 2), f"{waypoints.shape} and {(len_traj_pred + 1, 2)} should be equal"
 
             if learn_angle:
                 yaw = yaw[1:] - yaw[0]
@@ -169,39 +169,46 @@ class GNMDataset(tfds.core.GeneratorBasedBuilder):
                 actions[:, :2] /= self.data_config["metric_waypoint_spacing"] * self.waypoint_spacing
                 goal_pos /= self.data_config["metric_waypoint_spacing"] * self.waypoint_spacing
 
-            assert actions.shape == (self.len_traj_pred, self.num_action_params), f"{actions.shape} and {(self.len_traj_pred, self.num_action_params)} should be equal"
-
             return actions, goal_pos
 
         def _parse_example(episode_path):
             # load raw data --> this should change for your dataset
-            episode_path = os.path.join(episode_path, 'traj_data.pkl')
-            data = np.load(episode_path, allow_pickle=True)     # this is a list of dicts in our case
+            data_path = os.path.join(episode_path, 'traj_data.pkl')
+            data = np.load(data_path, allow_pickle=True)     # this is a list of dicts in our case
 
             # assemble episode --> here we're assuming demos so we set reward to 1 at the end
             episode = []
-            for i, step in enumerate(data):
+            for i in range(len(data['position'])):
                 # compute Kona language embedding
-                language_embedding = self._embed([step['language_instruction']])[0].numpy()
+                language_instruction = 'Navigate to the goal.'
+                language_embedding = self._embed([language_instruction])[0].numpy()
+
+                #Get image observation
                 image_path = f'{i}.jpg'
-                img = Image.open(image_path).load()
+                img = Image.open(os.path.join(episode_path, image_path))
                 img = np.asarray(img, dtype='uint8')
+
+                #Get state observation
+                state = np.concatenate((data['position'][i], [0, 0, 0, 0, 0]))
+
+                #Recover action(s)
                 actions, goal_pos = _compute_actions(data, i, i+1, len_traj_pred=1,
                     waypoint_spacing=1, learn_angle=False, normalize=False) 
+                action = actions[0]
+                action = np.concatenate((action, [0, 0, 0, 0, 0]))
 
                 episode.append({
                     'observation': {
-                        'image': step['image'],
-                        'wrist_image': step['wrist_image'],
-                        'state': step['state'],
+                        'image': img,
+                        'state': state,
                     },
-                    'action': step['action'],
+                    'action': action,
                     'discount': 1.0,
-                    'reward': float(i == (len(data) - 1)),
+                    'reward': float(i == (len(data['position']) - 1)),
                     'is_first': i == 0,
-                    'is_last': i == (len(data) - 1),
+                    'is_last': i == (len(data['position']) - 1),
                     'is_terminal': i == (len(data) - 1),
-                    'language_instruction': step['language_instruction'],
+                    'language_instruction': language_instruction,
                     'language_embedding': language_embedding,
                 })
 
@@ -216,15 +223,18 @@ class GNMDataset(tfds.core.GeneratorBasedBuilder):
             # if you want to skip an example for whatever reason, simply return None
             return episode_path, sample
 
-        dataset_names = _get_folder_names(path)
+        print(path)
+        dataset_names = os.listdir(path)
+        print(dataset_names)
         episode_paths = dict()
         for name in dataset_names:
-            episode_paths[name] = _get_folder_names(os.path.join(path, name))        
+            episode_paths[name] = _get_folder_names(os.path.join(path, name))
+
 
         # for smallish datasets, use single-thread parsing
         for name, paths in episode_paths.items():
             for sample in paths:
-                yield _parse_example(sample)
+                yield _parse_example(os.path.join(path, name, sample))
 
         # for large datasets use beam to parallelize data parsing (this will have initialization overhead)
         # beam = tfds.core.lazy_imports.apache_beam
