@@ -1,0 +1,9 @@
+LICENSE
+README.md
+setup.py
+gnm/__init__.py
+gnm/gnm_dataset_builder.py
+gnm.egg-info/PKG-INFO
+gnm.egg-info/SOURCES.txt
+gnm.egg-info/dependency_links.txt
+gnm.egg-info/top_level.txt

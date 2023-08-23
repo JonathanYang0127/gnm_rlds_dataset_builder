@@ -30,7 +30,7 @@ class GNMDataset(tfds.core.GeneratorBasedBuilder):
                 'steps': tfds.features.Dataset({
                     'observation': tfds.features.FeaturesDict({
                         'image': tfds.features.Image(
-                            shape=(120, 160, 3),
+                            shape=(64, 64, 3),
                             dtype=np.uint8,
                             encoding_format='png',
                             doc='Main camera RGB observation.',
@@ -136,6 +136,21 @@ class GNMDataset(tfds.core.GeneratorBasedBuilder):
             return (positions - curr_pos).dot(rotmat)
 
 
+        def _process_image(path, mode='stretch'):
+            img = Image.open(path)
+            if mode == 'stretch':
+                img = img.resize((64, 64))
+            elif mode == 'crop':
+                img = img.resize((85, 64))
+                
+                top = 0
+                bottom = 64
+                left = (85 - 64) // 2
+                right = (85 + 64) // 2
+                img = img.crop((left, top, right, bottom))
+            
+            return np.asarray(img, dtype='uint8')
+
         def _compute_actions(traj_data, curr_time, goal_time, len_traj_pred=1, waypoint_spacing=1, learn_angle=True, normalize=False):
             start_index = curr_time
             end_index = curr_time + len_traj_pred * waypoint_spacing + 1
@@ -185,8 +200,7 @@ class GNMDataset(tfds.core.GeneratorBasedBuilder):
 
                 #Get image observation
                 image_path = f'{i}.jpg'
-                img = Image.open(os.path.join(episode_path, image_path))
-                img = np.asarray(img, dtype='uint8')
+                img = _process_image(os.path.join(episode_path, image_path), mode='stretch')
 
                 #Get state observation
                 state = np.concatenate((data['position'][i], [0, 0, 0, 0, 0]))
@@ -220,8 +234,10 @@ class GNMDataset(tfds.core.GeneratorBasedBuilder):
                 }
             }
 
+            success = len(data['position']) >= 1
+
             # if you want to skip an example for whatever reason, simply return None
-            return episode_path, sample
+            return episode_path, sample, success
 
         print(path)
         dataset_names = os.listdir(path)
@@ -234,7 +250,9 @@ class GNMDataset(tfds.core.GeneratorBasedBuilder):
         # for smallish datasets, use single-thread parsing
         for name, paths in episode_paths.items():
             for sample in paths:
-                yield _parse_example(os.path.join(path, name, sample))
+                episode_path, sample, success = _parse_example(os.path.join(path, name, sample))
+                if success:
+                    yield episode_path, sample
 
         # for large datasets use beam to parallelize data parsing (this will have initialization overhead)
         # beam = tfds.core.lazy_imports.apache_beam
