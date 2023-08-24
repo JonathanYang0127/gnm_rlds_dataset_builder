@@ -1,3 +1,3 @@
 from setuptools import setup
 
-setup(name="gnm", packages=["gnm"])
+setup(name="gnm_dataset", packages=["gnm_dataset"])

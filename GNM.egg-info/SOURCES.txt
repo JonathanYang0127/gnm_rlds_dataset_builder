@@ -1,9 +1,0 @@
-LICENSE
-README.md
-setup.py
-GNM/__init__.py
-GNM/gnm_dataset_builder.py
-GNM.egg-info/PKG-INFO
-GNM.egg-info/SOURCES.txt
-GNM.egg-info/dependency_links.txt
-GNM.egg-info/top_level.txt
