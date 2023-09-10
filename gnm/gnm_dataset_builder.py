@@ -36,18 +36,33 @@ class GNMDataset(tfds.core.GeneratorBasedBuilder):
                             doc='Main camera RGB observation.',
                         ),
                         'state': tfds.features.Tensor(
-                            shape=(7,),
+                            shape=(3,),
                             dtype=np.float64,
-                            doc='Robot state, consists of [7x robot joint angles, '
-                                '2x gripper position, 1x door opening angle].',
+                            doc='Robot state, consists of [2x position, 1x yaw]',
+                        ),
+                        'position': tfds.features.Tensor(
+                            shape=(2,),
+                            dtype=np.float64,
+                            doc='Robot position',
+                        ),
+                        'yaw': tfds.features.Tensor(
+                            shape=(1,),
+                            dtype=np.float64,
+                            doc='Robot yaw',
                         )
+
                     }),
                     'action': tfds.features.Tensor(
-                        shape=(7,),
+                        shape=(2,),
                         dtype=np.float64,
-                        doc='Robot action, consists of [7x joint velocities, '
-                            '2x gripper velocities, 1x terminate episode].',
+                        doc='Robot action, consists of 2x position'
                     ),
+                     'action_angle': tfds.features.Tensor(
+                        shape=(3,),
+                        dtype=np.float64,
+                        doc='Robot action, consists of 2x position, 1x yaw',
+                    ),
+
                     'discount': tfds.features.Scalar(
                         dtype=np.float64,
                         doc='Discount if provided, default to 1.'
@@ -203,20 +218,29 @@ class GNMDataset(tfds.core.GeneratorBasedBuilder):
                 img = _process_image(os.path.join(episode_path, image_path), mode='stretch')
 
                 #Get state observation
-                state = np.concatenate((data['position'][i], [0, 0, 0, 0, 0]))
+                position = data['position'][i]
+                yaw = data['yaw'][i].reshape(-1)
+                state = np.concatenate((position, yaw))
 
                 #Recover action(s)
-                actions, goal_pos = _compute_actions(data, i, i+1, len_traj_pred=1,
+                action, goal_pos = _compute_actions(data, i, i+1, len_traj_pred=1,
                     waypoint_spacing=1, learn_angle=False, normalize=False) 
-                action = actions[0]
-                action = np.concatenate((action, [0, 0, 0, 0, 0]))
+                action_angle, goal_pos = _compute_actions(data, i, i+1, len_traj_pred=1,
+                    waypoint_spacing=1, learn_angle=True, normalize=False)
+                action = action[0]
+                action_angle = action_angle[0]
+                #action = actions[0]
+                #action = np.concatenate((action, [0, 0, 0, 0, 0]))
 
                 episode.append({
                     'observation': {
                         'image': img,
                         'state': state,
+                        'position': position,
+                        'yaw': yaw
                     },
                     'action': action,
+                    'action_angle': action_angle,
                     'discount': 1.0,
                     'reward': float(i == (len(data['position']) - 1)),
                     'is_first': i == 0,
