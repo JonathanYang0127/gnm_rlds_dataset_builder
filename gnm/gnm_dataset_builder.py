@@ -49,7 +49,12 @@ class GNMDataset(tfds.core.GeneratorBasedBuilder):
                             shape=(1,),
                             dtype=np.float64,
                             doc='Robot yaw',
-                        )
+                        ),
+                        'yaw_rotmat': tfds.features.Tensor(
+                            shape=(3,3),
+                            dtype=np.float64,
+                            doc='Yaw Rotation Matrix'
+                        ),
 
                     }),
                     'action': tfds.features.Tensor(
@@ -220,6 +225,7 @@ class GNMDataset(tfds.core.GeneratorBasedBuilder):
                 #Get state observation
                 position = data['position'][i]
                 yaw = data['yaw'][i].reshape(-1)
+                yaw_rotmat = _yaw_rotmat(yaw[0])
                 state = np.concatenate((position, yaw))
 
                 #Recover action(s)
@@ -237,7 +243,8 @@ class GNMDataset(tfds.core.GeneratorBasedBuilder):
                         'image': img,
                         'state': state,
                         'position': position,
-                        'yaw': yaw
+                        'yaw': yaw,
+                        'yaw_rotmat': yaw_rotmat
                     },
                     'action': action,
                     'action_angle': action_angle,
